@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+    <body>
+    <div style = "text-align:center;">
+    <canvas id="glCanvas" width="600" height="600" padding-left="0" padding-right="0" margin-left="auto" margin-right="auto" display="block">
+        <script>
+
+            const canvas = document.querySelector("#glCanvas");
+            const gl = canvas.getContext("webgl");
+            
+            var downClick = false;
+            var zKeyD = false;
+            var xKeyD = false;
+            var scrollFactor = 1.0;
+            var deltaTime = 1.0;
+            var button;
+            var LastCenterX = 0.0;
+            var LastCenterY = 0.0;
+            var mousePosX = 0.0;
+            var mousePosY = 0.0;
+            var programID = 0;
+            var offsetX = 0.0;
+            var offsetY = 0.0;
+
+            const hWidth = canvas.width / 2;
+            const hHeight = canvas.height / 2;
+            
+            var vs =
+            `attribute vec2 pos;
+            
+            precision mediump float;
+            varying mediump vec2 position;
+            
+            void main(){
+            gl_PointSize = 2.0;
+            gl_Position = vec4(pos.x, pos.y, 0.0, 1.0);
+            position = pos;
+            }`;
+            
+            
+            
+            var fs = `varying mediump vec2 position;
+            
+            precision mediump float;
+            uniform float scrollFactor;
+            uniform vec2 center;
+            
+            #define MAX 60.0
+            
+            vec4 color_0 = vec4(0.0, 0.0, 0.1, 1.0);
+            vec4 color_1 = vec4(0.42, 0.463, 0.62, 1.0);
+            vec4 color_2 = vec4(0.3258, 0.1337, 0.113, 1.0);
+            vec4 color_3 = vec4(1.0, 0.906, 0.886, 1.0);
+            vec4 white = vec4(1.0, 1.0, 1.0, 1.0);
+
+            void main(){
+                vec2 c = vec2(-1.476, 0.0);
+                vec2 zn = vec2(position.x * scrollFactor - center.x, position.y * scrollFactor - center.y);
+
+                highp float iterations = 0.0;
+                for(highp float iter = 0.0; iter < MAX; iter++){
+                    iterations += 1.0;
+                
+                    highp vec2 tempVec = zn;
+
+                    zn.x = zn.x * zn.x - zn.y * zn.y + c.x;
+                    zn.y = 2.0 * tempVec.x * zn.y + c.y;
+                    float dist2 = zn.x * zn.x + zn.y * zn.y;
+                    if(dist2 > 4.0)
+                        break;
+                }
+            
+
+                float i = iterations / MAX;
+                vec4 tColor = vec4(0.12 * i, 0.88 * i, 0.67 * i, 1.0);
+                if(iterations == MAX)
+                    tColor = vec4(0.0, 0.0, 0.0, 1.0);
+                else if(i <= 0.25)
+                    tColor = mix(color_0, color_1, i * 5.0);
+                else if(i > 0.25 && i <=0.5)
+                    tColor = mix(color_1, color_2, i);
+                else if(i > 0.5 && i <= 0.75)
+                    tColor = mix(color_1, color_3, i);
+                else if(i > 0.75)
+                    tColor = mix(color_2, color_3, i);
+
+            float blend = 0.9;
+            gl_FragColor = tColor * blend + white * (1.0 - blend);
+            }`;
+            
+            //sqrt(zn-c)
+            //sqrt(a+bi)=p+qi
+            //a+bi=p^2+2pqi-q^2
+            //a=p^2-q^2
+            //b=2pq
+            //b/2p=q
+            //a=p^2-
+
+            main();
+            
+            function main() {
+            
+            document.addEventListener('mousedown', downMClick);
+            document.addEventListener('mouseup', upMClick);
+            document.addEventListener('mousemove', mMove);
+            document.addEventListener('keydown', keyDown);
+            document.addEventListener('keyup', keyUp);
+            document.addEventListener('contextmenu', event => event.preventDefault());
+            
+            if (gl === null) {
+                alert("Unable to initialize WebGL. Your browser or machine may not support it.");
+                return;
+            }
+            
+            gl.clearColor(1.0, 1.0, 1.0, 1.0);  
+            gl.clearDepth(1.0);                
+            gl.enable(gl.DEPTH_TEST);          
+            gl.depthFunc(gl.LEQUAL);    
+            
+            var board = createBoard(canvas.width, canvas.height);  
+            programID = initShaderProgram(gl, vs, fs);
+            
+            gl.useProgram(programID);
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(board), gl.STATIC_DRAW);
+            
+            gl.vertexAttribPointer(gl.getAttribLocation(programID, 'pos'), 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(gl.getAttribLocation(programID, 'pos'));
+            
+            gl.uniform1f(gl.getUniformLocation(programID, 'scrollFactor'), 1.0);
+            gl.uniform2fv(gl.getUniformLocation(programID, 'center'), [0.0, 0.0]);
+            
+            gl.viewport(0,0,canvas.width,canvas.height);
+            //render loop
+            var lastFrame = 0;
+
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.drawArrays(gl.POINTS, 0, (board.length / 2));
+            function render(currentFrame){
+                currentFrame *= 0.001;
+                    deltaTime = currentFrame - lastFrame;
+                    lastFrame = currentFrame;
+            
+                    if(downClick){
+                    LastCenterX += offsetX;
+                    LastCenterY += offsetY;
+                    
+                    offsetX = 0.0;
+                    offsetY = 0.0;
+
+                    console.log("x: " + LastCenterX + "\ny: " + LastCenterY);
+            
+                    gl.uniform2fv(gl.getUniformLocation(programID, 'center'), [(LastCenterX / hWidth), -(LastCenterY / hHeight)]);
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                    gl.drawArrays(gl.POINTS, 0, (board.length / 2));
+                    }
+
+                    if(zKeyD){
+                    scrollFactor *= 0.98;
+                    gl.uniform1f(gl.getUniformLocation(programID, 'scrollFactor'), scrollFactor);
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                    gl.drawArrays(gl.POINTS, 0, (board.length / 2));
+                    }
+
+                    if(xKeyD){
+                    scrollFactor *= 1.02;
+                    gl.uniform1f(gl.getUniformLocation(programID, 'scrollFactor'), scrollFactor);
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                    gl.drawArrays(gl.POINTS, 0, (board.length / 2));
+                    }
+                requestAnimationFrame(render);
+            }
+                
+                //Call the render loop
+                requestAnimationFrame(render);
+            }
+            
+            function createBoard(width, height){
+            const max = 2 * width * height;
+            var board = new Array(max);
+                
+                for(var i = 0; i < height; i++){
+                for(var j = 0; j < 2 * width; j+=2){
+                    const accessorID = (2 * i * width) + j;
+                        
+                        board[accessorID] = ((j + 0.5)/hWidth) - 1.0;
+                        board[accessorID + 1] = ((i + 0.5)/hHeight) - 1.0;
+                    }
+                }
+                
+                return board;
+            }
+            
+            function initShaderProgram(gl, vsSource, fsSource){
+                const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
+                const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+            
+            // Create the shader program
+            
+            const shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+            
+            // If creating the shader program failed, alert
+            
+            if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                alert('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
+                return null;
+            }
+            
+            return shaderProgram;
+            
+            }
+            
+            function loadShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                alert('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            
+            return shader;
+            }
+            
+            function downMClick(e){
+            button = e.buttons;
+            downClick = true;
+            }
+            
+            function upMClick(e){
+            downClick = false;
+            }
+
+            function keyDown(e){
+            switch(e.key){
+                case 'z':
+                zKeyD = true;
+                break;
+                case 'x':
+                xKeyD = true;
+                break;
+            }
+            }
+
+            function keyUp(e){
+            switch(e.key){
+                case 'z':
+                zKeyD = false;
+                break;
+                case 'x':
+                xKeyD = false;
+                break;
+            }
+            }
+
+            function mMove(e){
+            offsetX = scrollFactor * (e.clientX - mousePosX);
+            offsetY = scrollFactor * (e.clientY - mousePosY);
+
+            mousePosX = e.clientX;
+            mousePosY = e.clientY;
+            }
+            
+        </script>
+    </canvas>
+    </div>
+    </body>
+</html>
+
+
